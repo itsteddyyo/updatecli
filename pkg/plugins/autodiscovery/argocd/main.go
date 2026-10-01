@@ -15,6 +15,12 @@ import (
 It searches ArgoCD manifests and generates manifests to update the Helm charts they reference.
 */
 type Spec struct {
+	// "ignorecontainer" disables the container image updates.
+	//
+	// default:
+	//   false
+	//
+	IgnoreContainer bool `yaml:",omitempty"`
 	// "rootdir" defines the directory where the crawler starts searching for ArgoCD manifests.
 	//
 	// default:

@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: image-values
+spec:
+  source:
+    repoURL: https://charts.example.com
+    chart: frontend
+    targetRevision: 1.0.0
+    helm:
+      valuesObject:
+        workload:
+          container:
+            image:
+              registry: ghcr.io
+              repository: org/frontend
+              tag: v1.2.3
+      parameters:
+        - name: image.repository
+          value: parameter-only
+      valueFiles:
+        - values.yaml
+  sources:
+    - repoURL: https://charts.example.com
+      chart: worker
+      targetRevision: 2.0.0
+      helm:
+        valuesObject:
+          images:
+            worker:
+              registry: docker.io
+              repository: org/worker
+              tag: 2.3.4
+    - repoURL: https://git.example.com/org/config.git
+      targetRevision: main
+      ref: values
+      helm:
+        valuesObject:
+          image:
+            repository: non-chart
+            tag: 1.0.0

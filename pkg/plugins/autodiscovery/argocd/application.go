@@ -7,9 +7,11 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"github.com/sirupsen/logrus"
+	"github.com/updatecli/updatecli/pkg/plugins/resources/dockerimage"
 )
 
 var (
@@ -38,6 +40,51 @@ type ApplicationSourceSpec struct {
 	TargetRevision string `yaml:"targetRevision"`
 	Chart          string `yaml:"chart"`
 	Ref            string `yaml:"ref"`
+	Helm           struct {
+		ValuesObject map[string]interface{} `yaml:"valuesObject"`
+	} `yaml:"helm"`
+}
+
+type containerImage struct {
+	Registry   string
+	Repository string
+	Tag        string
+	Path       string
+}
+
+func findContainerImages(values map[string]interface{}) []containerImage {
+	var images []containerImage
+
+	var visit func(interface{}, string)
+	visit = func(value interface{}, valuePath string) {
+		switch typedValue := value.(type) {
+		case map[string]interface{}:
+			if repository, ok := typedValue["repository"].(string); ok && repository != "" {
+				image := containerImage{Repository: repository, Path: valuePath}
+				image.Registry, _ = typedValue["registry"].(string)
+				image.Tag, _ = typedValue["tag"].(string)
+				if image.Tag == "" {
+					image.Tag = "latest"
+				}
+				images = append(images, image)
+			}
+
+			for key, child := range typedValue {
+				keyPath := key
+				if valuePath != "" {
+					keyPath = valuePath + "." + key
+				}
+				visit(child, keyPath)
+			}
+		case []interface{}:
+			for index, child := range typedValue {
+				visit(child, fmt.Sprintf("%s[%d]", valuePath, index))
+			}
+		}
+	}
+
+	visit(values, "")
+	return images
 }
 
 // IsZero checks if the ApplicationSourceSpec is empty in the context of Updatecli
@@ -113,6 +160,18 @@ func (f ArgoCD) discoverArgoCDManifests() ([][]byte, error) {
 				if manifest != nil {
 					manifests = append(manifests, manifest)
 				}
+
+				imageManifests, err := f.generateContainerImageManifests(
+					data.Spec.Source,
+					relativeFilepath,
+					"$.spec.source",
+					documentIndex,
+				)
+				if err != nil {
+					logrus.Errorf("error discovering application source images: %s", err)
+					continue
+				}
+				manifests = append(manifests, imageManifests...)
 			}
 
 			if !data.Spec.Template.Spec.Source.IsZero() {
@@ -130,6 +189,18 @@ func (f ArgoCD) discoverArgoCDManifests() ([][]byte, error) {
 				if manifest != nil {
 					manifests = append(manifests, manifest)
 				}
+
+				imageManifests, err := f.generateContainerImageManifests(
+					data.Spec.Template.Spec.Source,
+					relativeFilepath,
+					"$.spec.template.spec.source",
+					documentIndex,
+				)
+				if err != nil {
+					logrus.Errorf("error discovering application source images: %s", err)
+					continue
+				}
+				manifests = append(manifests, imageManifests...)
 			}
 
 			for i, source := range data.Spec.Sources {
@@ -151,6 +222,18 @@ func (f ArgoCD) discoverArgoCDManifests() ([][]byte, error) {
 				if manifest != nil {
 					manifests = append(manifests, manifest)
 				}
+
+				imageManifests, err := f.generateContainerImageManifests(
+					source,
+					relativeFilepath,
+					fmt.Sprintf("$.spec.sources[%d]", i),
+					documentIndex,
+				)
+				if err != nil {
+					logrus.Errorf("error discovering application source images: %s", err)
+					continue
+				}
+				manifests = append(manifests, imageManifests...)
 			}
 
 			for i, source := range data.Spec.Template.Spec.Sources {
@@ -172,8 +255,106 @@ func (f ArgoCD) discoverArgoCDManifests() ([][]byte, error) {
 				if manifest != nil {
 					manifests = append(manifests, manifest)
 				}
+
+				imageManifests, err := f.generateContainerImageManifests(
+					source,
+					relativeFilepath,
+					fmt.Sprintf("$.spec.template.spec.sources[%d]", i),
+					documentIndex,
+				)
+				if err != nil {
+					logrus.Errorf("error discovering application source images: %s", err)
+					continue
+				}
+				manifests = append(manifests, imageManifests...)
 			}
 		}
+	}
+
+	return manifests, nil
+}
+
+func (f ArgoCD) generateContainerImageManifests(data ApplicationSourceSpec, file, sourcePath string, yamlDocument int) ([][]byte, error) {
+	if f.spec.IgnoreContainer || data.IsZero() || len(data.Helm.ValuesObject) == 0 {
+		return nil, nil
+	}
+
+	var manifests [][]byte
+	for _, image := range findContainerImages(data.Helm.ValuesObject) {
+		imageName := strings.Trim(image.Registry, "/")
+		if imageName != "" {
+			imageName += "/"
+		}
+		imageName += strings.Trim(image.Repository, "/")
+
+		sourceSpec := dockerimage.NewDockerImageSpecFromImage(imageName, image.Tag, nil)
+		if sourceSpec == nil {
+			continue
+		}
+
+		versionFilterKind := sourceSpec.VersionFilter.Kind
+		versionFilterPattern := sourceSpec.VersionFilter.Pattern
+		versionFilterRegex := sourceSpec.VersionFilter.Regex
+		tagFilter := sourceSpec.TagFilter
+		if !f.spec.VersionFilter.IsZero() {
+			versionFilterKind = f.versionFilter.Kind
+			var err error
+			versionFilterPattern, err = f.versionFilter.GreaterThanPattern(image.Tag)
+			if err != nil {
+				logrus.Debugf("building image version filter pattern: %s", err)
+				versionFilterPattern = "*"
+			}
+			versionFilterRegex = f.versionFilter.Regex
+			tagFilter = ""
+		}
+
+		tmpl, err := template.New("containerImageManifest").Parse(containerImageManifestTemplate)
+		if err != nil {
+			return nil, err
+		}
+
+		valuesPath := sourcePath + ".helm.valuesObject." + image.Path
+		params := struct {
+			ActionID                   string
+			ImageName                  string
+			ChartName                  string
+			SourceID                   string
+			SourceVersionFilterKind    string
+			SourceVersionFilterPattern string
+			SourceVersionFilterRegex   string
+			SourceTagFilter            string
+			Registry                   string
+			Repository                 string
+			RegistryKey                string
+			RepositoryKey              string
+			TagKey                     string
+			File                       string
+			ScmID                      string
+			YamlDocument               int
+		}{
+			ActionID:                   f.actionID,
+			ImageName:                  imageName,
+			ChartName:                  data.Chart,
+			SourceID:                   strings.ReplaceAll(imageName, "/", "_"),
+			SourceVersionFilterKind:    versionFilterKind,
+			SourceVersionFilterPattern: versionFilterPattern,
+			SourceVersionFilterRegex:   versionFilterRegex,
+			SourceTagFilter:            tagFilter,
+			Registry:                   image.Registry,
+			Repository:                 image.Repository,
+			RegistryKey:                valuesPath + ".registry",
+			RepositoryKey:              valuesPath + ".repository",
+			TagKey:                     valuesPath + ".tag",
+			File:                       file,
+			ScmID:                      f.scmID,
+			YamlDocument:               yamlDocument,
+		}
+
+		manifest := bytes.Buffer{}
+		if err := tmpl.Execute(&manifest, params); err != nil {
+			return nil, fmt.Errorf("executing container image manifest template: %w", err)
+		}
+		manifests = append(manifests, manifest.Bytes())
 	}
 
 	return manifests, nil

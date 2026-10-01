@@ -21,6 +21,7 @@ func TestSearchFiles(t *testing.T) {
 		"testdata/oci-helm-source/manifest.yaml",
 		"testdata/sealed-secrets/manifest.yaml",
 		"testdata/sealed-secrets_sources/manifest.yaml",
+		"testdata/values-object/manifest.yaml",
 	}
 
 	assert.Equal(t, expectedFiles, gotFiles)

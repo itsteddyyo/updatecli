@@ -2,6 +2,7 @@ package argocd
 
 import (
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -427,5 +428,42 @@ targets:
 				assert.Equal(t, tt.expectedPipelines[i], pipelines[i])
 			}
 		})
+	}
+}
+
+func TestDiscoverContainerImagesFromValuesObject(t *testing.T) {
+	argocd, err := New(Spec{}, "testdata/values-object", "", "")
+	require.NoError(t, err)
+
+	manifests, err := argocd.DiscoverManifests()
+	require.NoError(t, err)
+
+	var imageManifests []string
+	for _, manifest := range manifests {
+		if strings.Contains(string(manifest), "kind: 'dockerimage'") {
+			imageManifests = append(imageManifests, string(manifest))
+		}
+	}
+
+	require.Len(t, imageManifests, 2)
+	assert.Contains(t, imageManifests[0]+imageManifests[1], "image: 'ghcr.io/org/frontend'")
+	assert.Contains(t, imageManifests[0]+imageManifests[1], "key: '$.spec.source.helm.valuesObject.workload.container.image.tag'")
+	assert.Contains(t, imageManifests[0]+imageManifests[1], "image: 'docker.io/org/worker'")
+	assert.Contains(t, imageManifests[0]+imageManifests[1], "key: '$.spec.sources[0].helm.valuesObject.images.worker.tag'")
+	assert.NotContains(t, imageManifests[0]+imageManifests[1], "parameter-only")
+	assert.NotContains(t, imageManifests[0]+imageManifests[1], "non-chart")
+}
+
+func TestIgnoreContainerImages(t *testing.T) {
+	argocd, err := New(Spec{IgnoreContainer: true}, "testdata/values-object", "", "")
+	require.NoError(t, err)
+
+	manifests, err := argocd.DiscoverManifests()
+	require.NoError(t, err)
+	require.Len(t, manifests, 2)
+
+	for _, manifest := range manifests {
+		assert.NotContains(t, string(manifest), "kind: 'dockerimage'")
+		assert.Contains(t, string(manifest), "kind: 'helmchart'")
 	}
 }
