@@ -333,7 +333,6 @@ func (f ArgoCD) generateContainerImageManifests(data ApplicationSourceSpec, file
 			RegistryKey                string
 			RepositoryKey              string
 			TagKey                     string
-			DigestKey                  string
 			File                       string
 			ScmID                      string
 			YamlDocument               int
@@ -352,7 +351,6 @@ func (f ArgoCD) generateContainerImageManifests(data ApplicationSourceSpec, file
 			RegistryKey:                valuesPath + ".registry",
 			RepositoryKey:              valuesPath + ".repository",
 			TagKey:                     valuesPath + ".tag",
-			DigestKey:                  valuesPath + ".digest",
 			File:                       file,
 			ScmID:                      f.scmID,
 			YamlDocument:               yamlDocument,

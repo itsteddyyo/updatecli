@@ -94,11 +94,8 @@ sources:
     spec:
       image: '{{ .ImageName }}'
       tag: '{{ "{{" }} source "{{ .SourceID }}" {{ "}}" }}'
-      hidetag: true
     dependson:
       - '{{ .SourceID }}'
-    transformers:
-      - trimprefix: '@'
 {{- end }}
 conditions:
 {{- if .Registry }}
@@ -129,7 +126,7 @@ conditions:
       value: '{{ .Repository }}'
 targets:
   {{ .SourceID }}:
-    name: 'deps(argocd): bump image "{{ .ImageName }}" tag'
+    name: 'deps(argocd): bump image "{{ .ImageName }}" tag{{ if .Digest }} and digest{{ end }}'
     kind: 'yaml'
 {{- if .ScmID }}
     scmid: '{{ .ScmID }}'
@@ -138,19 +135,10 @@ targets:
       file: '{{ .File }}'
       key: '{{ .TagKey }}'
       documentindex: {{ .YamlDocument }}
-    sourceid: '{{ .SourceID }}'
 {{- if .Digest }}
-  {{ .SourceID }}-digest:
-    name: 'deps(argocd): pin image "{{ .ImageName }}" digest'
-    kind: 'yaml'
-{{- if .ScmID }}
-    scmid: '{{ .ScmID }}'
-{{- end }}
-    spec:
-      file: '{{ .File }}'
-      key: '{{ .DigestKey }}'
-      documentindex: {{ .YamlDocument }}
     sourceid: '{{ .SourceID }}-digest'
+{{- else }}
+    sourceid: '{{ .SourceID }}'
 {{- end }}
 `
 )
