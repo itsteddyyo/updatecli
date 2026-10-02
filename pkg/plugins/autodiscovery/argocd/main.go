@@ -15,6 +15,12 @@ import (
 It searches ArgoCD manifests and generates manifests to update the Helm charts they reference.
 */
 type Spec struct {
+	// "digest" defines whether generated manifests pin the image digest in addition to the tag.
+	//
+	// default:
+	//   true
+	//
+	Digest *bool `yaml:",omitempty"`
 	// "ignorecontainer" disables the container image updates.
 	//
 	// default:
@@ -98,6 +104,8 @@ type auth struct {
 
 // ArgoCD holds all information needed to generate argocd pipelines.
 type ArgoCD struct {
+	// digest defines if generated manifests should pin the image digest in addition to the tag
+	digest bool
 	// spec defines the settings provided via an updatecli manifest
 	spec Spec
 	// rootDir defines the root directory from where looking for ArgoCD manifest
@@ -152,8 +160,14 @@ func New(spec interface{}, rootDir, scmID, actionID string) (ArgoCD, error) {
 		newFilter.Pattern = "*"
 	}
 
+	digest := true
+	if s.Digest != nil {
+		digest = *s.Digest
+	}
+
 	return ArgoCD{
 		actionID:      actionID,
+		digest:        digest,
 		spec:          s,
 		rootDir:       dir,
 		scmID:         scmID,

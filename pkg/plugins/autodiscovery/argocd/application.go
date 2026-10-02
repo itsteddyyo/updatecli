@@ -60,9 +60,13 @@ func findContainerImages(values map[string]interface{}) []containerImage {
 		switch typedValue := value.(type) {
 		case map[string]interface{}:
 			if repository, ok := typedValue["repository"].(string); ok && repository != "" {
-				image := containerImage{Repository: repository, Path: valuePath}
+				image := containerImage{
+					Repository: strings.SplitN(repository, "@", 2)[0],
+					Path:       valuePath,
+				}
 				image.Registry, _ = typedValue["registry"].(string)
 				image.Tag, _ = typedValue["tag"].(string)
+				image.Tag = strings.SplitN(image.Tag, "@", 2)[0]
 				if image.Tag == "" {
 					image.Tag = "latest"
 				}
@@ -315,6 +319,7 @@ func (f ArgoCD) generateContainerImageManifests(data ApplicationSourceSpec, file
 
 		valuesPath := sourcePath + ".helm.valuesObject." + image.Path
 		params := struct {
+			Digest                     bool
 			ActionID                   string
 			ImageName                  string
 			ChartName                  string
@@ -328,10 +333,12 @@ func (f ArgoCD) generateContainerImageManifests(data ApplicationSourceSpec, file
 			RegistryKey                string
 			RepositoryKey              string
 			TagKey                     string
+			DigestKey                  string
 			File                       string
 			ScmID                      string
 			YamlDocument               int
 		}{
+			Digest:                     f.digest,
 			ActionID:                   f.actionID,
 			ImageName:                  imageName,
 			ChartName:                  data.Chart,
@@ -345,6 +352,7 @@ func (f ArgoCD) generateContainerImageManifests(data ApplicationSourceSpec, file
 			RegistryKey:                valuesPath + ".registry",
 			RepositoryKey:              valuesPath + ".repository",
 			TagKey:                     valuesPath + ".tag",
+			DigestKey:                  valuesPath + ".digest",
 			File:                       file,
 			ScmID:                      f.scmID,
 			YamlDocument:               yamlDocument,

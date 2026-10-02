@@ -68,7 +68,7 @@ targets:
       documentindex: {{ .TargetYamlDocument }}
     sourceid: '{{ .SourceID }}'
 `
-	containerImageManifestTemplate string = `name: 'deps(argocd): bump image "{{ .ImageName }}" tag for chart "{{ .ChartName }}"'
+	containerImageManifestTemplate string = `name: 'deps(argocd): bump image "{{ .ImageName }}" tag{{ if .Digest }} and digest{{ end }} for chart "{{ .ChartName }}"'
 {{- if .ActionID }}
 actions:
   {{ .ActionID }}:
@@ -86,6 +86,19 @@ sources:
         pattern: '{{ .SourceVersionFilterPattern }}'
 {{- if or (eq .SourceVersionFilterKind "regex/semver") (eq .SourceVersionFilterKind "regex/time") }}
         regex: '{{ .SourceVersionFilterRegex }}'
+{{- end }}
+{{- if .Digest }}
+  {{ .SourceID }}-digest:
+    name: 'get latest image digest for "{{ .ImageName }}"'
+    kind: 'dockerdigest'
+    spec:
+      image: '{{ .ImageName }}'
+      tag: '{{ "{{" }} source "{{ .SourceID }}" {{ "}}" }}'
+      hidetag: true
+    dependson:
+      - '{{ .SourceID }}'
+    transformers:
+      - trimprefix: '@'
 {{- end }}
 conditions:
 {{- if .Registry }}
@@ -126,5 +139,18 @@ targets:
       key: '{{ .TagKey }}'
       documentindex: {{ .YamlDocument }}
     sourceid: '{{ .SourceID }}'
+{{- if .Digest }}
+  {{ .SourceID }}-digest:
+    name: 'deps(argocd): pin image "{{ .ImageName }}" digest'
+    kind: 'yaml'
+{{- if .ScmID }}
+    scmid: '{{ .ScmID }}'
+{{- end }}
+    spec:
+      file: '{{ .File }}'
+      key: '{{ .DigestKey }}'
+      documentindex: {{ .YamlDocument }}
+    sourceid: '{{ .SourceID }}-digest'
+{{- end }}
 `
 )

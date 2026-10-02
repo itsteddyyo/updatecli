@@ -448,10 +448,54 @@ func TestDiscoverContainerImagesFromValuesObject(t *testing.T) {
 	require.Len(t, imageManifests, 2)
 	assert.Contains(t, imageManifests[0]+imageManifests[1], "image: 'ghcr.io/org/frontend'")
 	assert.Contains(t, imageManifests[0]+imageManifests[1], "key: '$.spec.source.helm.valuesObject.workload.container.image.tag'")
+	assert.Contains(t, imageManifests[0]+imageManifests[1], "kind: 'dockerdigest'")
+	assert.Contains(t, imageManifests[0]+imageManifests[1], "hidetag: true")
+	assert.Contains(t, imageManifests[0]+imageManifests[1], "- trimprefix: '@'")
+	assert.Contains(t, imageManifests[0]+imageManifests[1], "key: '$.spec.source.helm.valuesObject.workload.container.image.digest'")
 	assert.Contains(t, imageManifests[0]+imageManifests[1], "image: 'docker.io/org/worker'")
 	assert.Contains(t, imageManifests[0]+imageManifests[1], "key: '$.spec.sources[0].helm.valuesObject.images.worker.tag'")
+	assert.Contains(t, imageManifests[0]+imageManifests[1], "key: '$.spec.sources[0].helm.valuesObject.images.worker.digest'")
 	assert.NotContains(t, imageManifests[0]+imageManifests[1], "parameter-only")
 	assert.NotContains(t, imageManifests[0]+imageManifests[1], "non-chart")
+}
+
+func TestDiscoverContainerImagesWithInlineDigest(t *testing.T) {
+	argocd, err := New(Spec{}, "testdata/values-object", "", "")
+	require.NoError(t, err)
+
+	source := ApplicationSourceSpec{
+		RepoURL:        "https://charts.example.com",
+		TargetRevision: "1.0.0",
+		Chart:          "frontend",
+	}
+	source.Helm.ValuesObject = map[string]interface{}{
+		"image": map[string]interface{}{
+			"repository": "org/frontend@sha256:old",
+			"tag":        "v1.2.3@sha256:old",
+		},
+	}
+
+	manifests, err := argocd.generateContainerImageManifests(source, "manifest.yaml", "$.spec.source", 0)
+	require.NoError(t, err)
+	require.Len(t, manifests, 1)
+
+	manifest := string(manifests[0])
+	assert.Contains(t, manifest, "image: 'org/frontend'")
+	assert.Contains(t, manifest, "pattern: '>=v1.2.3'")
+	assert.NotContains(t, manifest, "@sha256:old")
+}
+
+func TestDisableContainerImageDigests(t *testing.T) {
+	digest := false
+	argocd, err := New(Spec{Digest: &digest}, "testdata/values-object", "", "")
+	require.NoError(t, err)
+
+	manifests, err := argocd.DiscoverManifests()
+	require.NoError(t, err)
+
+	for _, manifest := range manifests {
+		assert.NotContains(t, string(manifest), "kind: 'dockerdigest'")
+	}
 }
 
 func TestIgnoreContainerImages(t *testing.T) {
