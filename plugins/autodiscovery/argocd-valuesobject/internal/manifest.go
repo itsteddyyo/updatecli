@@ -27,11 +27,7 @@ type manifestParams struct {
 }
 
 func generateManifest(input Input, host HostFunctions, file, sourcePath string, documentIndex int, image containerImage) (string, error) {
-	imageName := strings.Trim(image.Registry, "/")
-	if imageName != "" {
-		imageName += "/"
-	}
-	imageName += strings.Trim(image.Repository, "/")
+	imageName := image.Name()
 	if imageName == "" {
 		return "", nil
 	}

@@ -14,6 +14,8 @@ type Output struct {
 type Spec struct {
 	RootDir       string        `json:"rootdir,omitempty"`
 	Files         []string      `json:"files,omitempty"`
+	ExcludeFiles  []string      `json:"excludeFiles,omitempty"`
+	ExcludeImages []string      `json:"excludeImages,omitempty"`
 	Digest        *bool         `json:"digest,omitempty"`
 	VersionFilter VersionFilter `json:"versionfilter,omitempty"`
 }

@@ -127,8 +127,35 @@ func TestFindFilesFiltersByPattern(t *testing.T) {
 		require.NoError(t, os.WriteFile(path, []byte("kind: Application\n"), 0600))
 	}
 
-	files, err := findFiles(rootDir, []string{"apps/*.yaml"})
+	files, err := findFiles(rootDir, []string{"apps/*.yaml"}, nil)
 	require.NoError(t, err)
 	require.Len(t, files, 1)
 	require.Equal(t, filepath.Join(rootDir, "apps/one.yaml"), files[0])
+}
+
+func TestRunExcludesFilesAndImages(t *testing.T) {
+	rootDir := t.TempDir()
+	files := map[string]string{
+		"apps/included.yaml": `{"apiVersion":"argoproj.io/v1alpha1","kind":"Application","spec":{"source":{"repoURL":"https://charts.example.com","chart":"service","targetRevision":"1.0.0","helm":{"valuesObject":{"images":{"keep":{"registry":"ghcr.io","repository":"org/keep","tag":"1.2.3"},"skip":{"registry":"ghcr.io","repository":"org/skip","tag":"1.2.3"}}}}}}}`,
+		"apps/excluded.yaml": `{"apiVersion":"argoproj.io/v1alpha1","kind":"Application","spec":{"source":{"repoURL":"https://charts.example.com","chart":"service","targetRevision":"1.0.0","helm":{"valuesObject":{"image":{"repository":"org/file-excluded","tag":"1.2.3"}}}}}}`,
+	}
+	for file, content := range files {
+		path := filepath.Join(rootDir, file)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0600))
+	}
+
+	output, err := Run(Input{
+		Spec: Spec{
+			RootDir:       rootDir,
+			Files:         []string{"apps/*.yaml"},
+			ExcludeFiles:  []string{"apps/excluded.yaml"},
+			ExcludeImages: []string{"ghcr.io/org/skip"},
+		},
+	}, testHostFunctions{})
+	require.NoError(t, err)
+	require.Len(t, output.Manifests, 1)
+	require.Contains(t, output.Manifests[0], "image: 'ghcr.io/org/keep'")
+	require.NotContains(t, output.Manifests[0], "org/skip")
+	require.NotContains(t, output.Manifests[0], "org/file-excluded")
 }

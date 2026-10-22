@@ -19,10 +19,14 @@ autodiscovery:
         files:
           - "*.yaml"
           - "*.yml"
+        excludeFiles:
+          - "generated/*.yaml"
+        excludeImages:
+          - "ghcr.io/org/skip-this-image"
         digest: true
         versionfilter:
           kind: semver
           pattern: minor
 ```
 
-`rootdir` is relative to the plugin's mounted workspace and defaults to `.`. When `files` is omitted, all `.yaml` and `.yml` files below `rootdir` are scanned. `files` entries are glob patterns matched against paths relative to `rootdir` or against the basename. Digest updates are enabled by default; set `digest: false` to update tags only. The version filter is optional and defaults to the filter inferred from the current image tag.
+`rootdir` is relative to the plugin's mounted workspace and defaults to `.`. When `files` is omitted, all `.yaml` and `.yml` files below `rootdir` are scanned. `files` entries are inclusion glob patterns matched against paths relative to `rootdir` or against the basename. `excludeFiles` uses the same matching rules to omit files. `excludeImages` contains glob patterns matched against the full `registry/repository` image name (or just `repository` when no registry is set). Digest updates are enabled by default; set `digest: false` to update tags only. The version filter is optional and defaults to the filter inferred from the current image tag.

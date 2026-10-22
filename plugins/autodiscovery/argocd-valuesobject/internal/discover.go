@@ -19,13 +19,21 @@ type containerImage struct {
 	Path       string
 }
 
+func (image containerImage) Name() string {
+	name := strings.Trim(image.Registry, "/")
+	if name != "" {
+		name += "/"
+	}
+	return name + strings.Trim(image.Repository, "/")
+}
+
 func Run(input Input, host HostFunctions) (*Output, error) {
 	rootDir := input.Spec.RootDir
 	if rootDir == "" {
 		rootDir = "."
 	}
 
-	files, err := findFiles(rootDir, input.Spec.Files)
+	files, err := findFiles(rootDir, input.Spec.Files, input.Spec.ExcludeFiles)
 	if err != nil {
 		return nil, err
 	}
@@ -49,6 +57,9 @@ func Run(input Input, host HostFunctions) (*Output, error) {
 			for _, source := range applicationSources(document) {
 				valuesObject := nestedMap(source.value, "helm", "valuesObject")
 				for _, image := range findContainerImages(valuesObject) {
+					if matchesAnyPattern(image.Name(), input.Spec.ExcludeImages) {
+						continue
+					}
 					manifest, err := generateManifest(input, host, targetFile, source.path, documentIndex, image)
 					if err != nil {
 						return nil, fmt.Errorf("generating image manifest for %q in %q: %w", image.Repository, targetFile, err)
@@ -64,7 +75,7 @@ func Run(input Input, host HostFunctions) (*Output, error) {
 	return output, nil
 }
 
-func findFiles(rootDir string, patterns []string) ([]string, error) {
+func findFiles(rootDir string, patterns, excludePatterns []string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(rootDir, func(file string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -77,14 +88,17 @@ func findFiles(rootDir string, patterns []string) ([]string, error) {
 		if extension != ".yaml" && extension != ".yml" {
 			return nil
 		}
-		if len(patterns) > 0 {
-			relativeFile, err := filepath.Rel(rootDir, file)
-			if err != nil {
-				return err
-			}
-			if !matchesAnyPattern(filepath.ToSlash(relativeFile), patterns) && !matchesAnyPattern(filepath.Base(file), patterns) {
-				return nil
-			}
+		relativeFile, err := filepath.Rel(rootDir, file)
+		if err != nil {
+			return err
+		}
+		relativePath := filepath.ToSlash(relativeFile)
+		baseName := filepath.Base(file)
+		if len(patterns) > 0 && !matchesAnyPattern(relativePath, patterns) && !matchesAnyPattern(baseName, patterns) {
+			return nil
+		}
+		if matchesAnyPattern(relativePath, excludePatterns) || matchesAnyPattern(baseName, excludePatterns) {
+			return nil
 		}
 		files = append(files, file)
 		return nil
