@@ -22,6 +22,12 @@ func (testHostFunctions) DockerSourceSpec(_, _ string) (*DockerSourceSpec, error
 }
 
 func (testHostFunctions) VersionFilterGreaterThanPattern(filter *VersionFilter, tag string) error {
+	if filter.Kind == "semver" && strings.Count(tag, ".") != 2 {
+		return os.ErrInvalid
+	}
+	if filter.Kind == "lex" {
+		return os.ErrInvalid
+	}
 	filter.Pattern = ">=" + tag
 	return nil
 }
@@ -81,6 +87,36 @@ func TestRunAppliesVersionFilterAndDigestSettings(t *testing.T) {
 	require.Len(t, output.Manifests, 1)
 	require.Contains(t, output.Manifests[0], "pattern: '>=v1.2.3'")
 	require.NotContains(t, output.Manifests[0], "dockerdigest")
+}
+
+func TestRunSkipsInvalidSemverTagButAllowsLexicalTag(t *testing.T) {
+	rootDir := t.TempDir()
+	manifestPath := filepath.Join(rootDir, "app.yaml")
+	manifest := `{"apiVersion":"argoproj.io/v1alpha1","kind":"Application","spec":{"source":{"repoURL":"https://charts.example.com","chart":"service","targetRevision":"1.0.0","helm":{"valuesObject":{"image":{"repository":"org/service","tag":"26.04.5.1.1@sha256:bb8f3c9c5c9016045f25fccb5f0649be94469ebc7c7cc379f3576e470cccf33d"}}}}}}
+`
+	require.NoError(t, os.WriteFile(manifestPath, []byte(manifest), 0600))
+
+	for _, kind := range []string{"semver", "lex"} {
+		t.Run(kind, func(t *testing.T) {
+			output, err := Run(Input{
+				Spec: Spec{
+					RootDir: rootDir,
+					VersionFilter: VersionFilter{
+						Kind:    kind,
+						Pattern: "*",
+					},
+				},
+			}, testHostFunctions{})
+			require.NoError(t, err)
+			if kind == "semver" {
+				require.Empty(t, output.Manifests)
+				return
+			}
+			require.Len(t, output.Manifests, 1)
+			require.Contains(t, output.Manifests[0], "kind: 'lex'")
+			require.Contains(t, output.Manifests[0], "pattern: '*'")
+		})
+	}
 }
 
 func TestFindFilesFiltersByPattern(t *testing.T) {

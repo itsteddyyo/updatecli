@@ -46,8 +46,13 @@ func generateManifest(input Input, host HostFunctions, file, sourcePath string, 
 	}
 	if !input.Spec.VersionFilter.IsZero() {
 		versionFilter = input.Spec.VersionFilter
-		if err := host.VersionFilterGreaterThanPattern(&versionFilter, image.Tag); err != nil {
-			return "", fmt.Errorf("building version filter pattern: %w", err)
+		if versionFilter.Kind != "lex" {
+			if err := host.VersionFilterGreaterThanPattern(&versionFilter, image.Tag); err != nil {
+				if versionFilter.Kind == "semver" {
+					return "", nil
+				}
+				return "", fmt.Errorf("building version filter pattern: %w", err)
+			}
 		}
 		tagFilter = ""
 	}
